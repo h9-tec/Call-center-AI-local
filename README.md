@@ -612,4 +612,4 @@ Special thanks to:
 
 ---
 
-For commercial support and enterprise features, please contact: support@your-domain.com
+For commercial support and enterprise features, please contact: heshamharoon19@gmail.com
