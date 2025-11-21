@@ -1,0 +1,345 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: call-center-ai
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: call-center-ai
+data:
+  config.yaml: |
+    # Production configuration
+    # See config-production.yaml for full configuration
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: call-center-ai
+type: Opaque
+stringData:
+  postgres-password: "changeme"
+  redis-password: "changeme"
+  jwt-secret: "changeme"
+  twilio-auth-token: "changeme"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: call-center-ai
+  namespace: call-center-ai
+  labels:
+    app: call-center-ai
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: call-center-ai
+  template:
+    metadata:
+      labels:
+        app: call-center-ai
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: call-center-ai
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: app
+        image: call-center-ai:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        - containerPort: 9090
+          name: metrics
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: CONFIG_FILE
+          value: "/config/config.yaml"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: postgres-password
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: redis-password
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: jwt-secret
+        - name: TWILIO_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: twilio-auth-token
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: models
+          mountPath: /app/models
+          readOnly: true
+        - name: cache
+          mountPath: /app/cache
+        - name: logs
+          mountPath: /app/logs
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+            ephemeral-storage: "10Gi"
+          limits:
+            memory: "8Gi"
+            cpu: "4"
+            ephemeral-storage: "20Gi"
+            nvidia.com/gpu: "1"  # Optional: GPU support
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: config
+        configMap:
+          name: app-config
+      - name: models
+        persistentVolumeClaim:
+          claimName: models-pvc
+      - name: cache
+        emptyDir:
+          sizeLimit: 5Gi
+      - name: logs
+        emptyDir:
+          sizeLimit: 10Gi
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - call-center-ai
+              topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: call-center-ai
+  namespace: call-center-ai
+  labels:
+    app: call-center-ai
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: metrics
+  selector:
+    app: call-center-ai
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: call-center-ai-hpa
+  namespace: call-center-ai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: call-center-ai
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: active_calls
+      target:
+        type: AverageValue
+        averageValue: "50"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: call-center-ai
+  namespace: call-center-ai
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: call-center-ai
+  namespace: call-center-ai
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: call-center-ai
+  namespace: call-center-ai
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: call-center-ai
+subjects:
+- kind: ServiceAccount
+  name: call-center-ai
+  namespace: call-center-ai
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: call-center-ai-pdb
+  namespace: call-center-ai
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: call-center-ai
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: call-center-ai-netpol
+  namespace: call-center-ai
+spec:
+  podSelector:
+    matchLabels:
+      app: call-center-ai
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 9090
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    - podSelector:
+        matchLabels:
+          app: redis
+    - podSelector:
+        matchLabels:
+          app: ollama
+    ports:
+    - protocol: TCP
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 169.254.169.254/32  # Block metadata service
+    ports:
+    - protocol: TCP
+      port: 443  # HTTPS for external APIs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: models-pvc
+  namespace: call-center-ai
+spec:
+  accessModes:
+  - ReadOnlyMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd

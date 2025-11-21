@@ -1,0 +1,131 @@
+# Call Center AI - Local Configuration
+# Complete configuration for local deployment
+
+# System Configuration
+system:
+  environment: local
+  debug: false
+  log_level: INFO
+
+# Ollama LLM Configuration
+ollama:
+  host: http://localhost:11434
+  models:
+    fast: llama3.2:3b        # Fast responses
+    accurate: llama3.2:3b    # More accurate (can use larger model)
+  default_model: llama3.2:3b
+  options:
+    temperature: 0.7
+    num_predict: 100
+    top_p: 0.9
+    timeout: 30
+
+# Company/Agent Configuration
+company:
+  name: AI Support Center
+  agent_name: Alex
+  agent_personality: professional, helpful, empathetic
+  greeting: "Hello! Thank you for calling {company_name}. This is {agent_name}. How can I help you today?"
+  farewell: "Thank you for calling. Have a great day!"
+
+# Speech-to-Text (STT) Configuration
+stt:
+  provider: whisper        # Options: whisper, google, azure
+  whisper:
+    host: http://localhost:9000
+    model: base           # Options: tiny, base, small, medium, large
+    language: en
+    timeout: 30
+  audio:
+    sample_rate: 8000     # Hz (Asterisk default)
+    channels: 1           # Mono
+    chunk_duration: 1000  # ms
+
+# Text-to-Speech (TTS) Configuration
+tts:
+  provider: piper         # Options: piper, espeak, gtts
+  piper:
+    host: localhost
+    port: 10200
+    voice: en_US-amy-medium  # Voice model
+    speed: 1.0
+    pitch: 1.0
+  audio:
+    format: ulaw          # For Asterisk compatibility
+    sample_rate: 8000
+
+# Asterisk PBX Configuration
+asterisk:
+  enabled: true
+  host: localhost
+  port: 5060
+  extensions:
+    - number: 1001
+      password: password1001
+      context: from-internal
+    - number: 1002
+      password: password1002
+      context: from-internal
+    - number: 2000
+      description: AI Agent
+      context: ai-callcenter
+
+# AudioSocket Bridge Configuration
+ai_bridge:
+  host: 0.0.0.0
+  port: 9999
+  max_connections: 10
+  buffer_size: 8000       # 1 second of audio
+  silence_threshold: 500  # ms
+  vad:                    # Voice Activity Detection
+    enabled: true
+    energy_threshold: 10
+    min_speech_length: 300  # ms
+
+# Call Processing Configuration
+call_processing:
+  max_call_duration: 3600  # seconds (1 hour)
+  recording:
+    enabled: false
+    path: /var/spool/asterisk/monitor
+    format: wav
+  conversation:
+    max_context_turns: 3  # Number of previous exchanges to include
+    summary_enabled: true
+
+# Performance Configuration
+performance:
+  workers: 4
+  async_processing: true
+  cache:
+    enabled: true
+    ttl: 300  # seconds
+
+# Docker Configuration
+docker:
+  compose_files:
+    minimal: docker/docker-compose.yaml
+    voice: docker/docker-compose.voice.yaml
+    full: docker/docker-compose.asterisk.yaml
+  resource_limits:
+    memory: 4G
+    cpu: 2
+
+# Development Settings
+development:
+  test_mode: false
+  mock_services: false
+  verbose_logging: false
+  simulators:
+    - phone-simulator
+    - voice-call-simulator
+
+# Monitoring
+monitoring:
+  metrics:
+    enabled: false
+    port: 9090
+  health_check:
+    enabled: true
+    endpoint: /health
+    port: 8080

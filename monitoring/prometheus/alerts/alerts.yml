@@ -1,0 +1,176 @@
+groups:
+  - name: call_center_alerts
+    interval: 30s
+    rules:
+      # High Error Rate
+      - alert: HighErrorRate
+        expr: job:error_rate:5m > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.job }}"
+
+      - alert: CriticalErrorRate
+        expr: job:error_rate:5m > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.job }}"
+
+      # Response Latency
+      - alert: HighResponseLatency
+        expr: instance:response_latency_ms:p95 > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response latency detected"
+          description: "95th percentile response latency is {{ $value }}ms for {{ $labels.instance }}"
+
+      - alert: CriticalResponseLatency
+        expr: instance:response_latency_ms:p95 > 1000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical response latency detected"
+          description: "95th percentile response latency is {{ $value }}ms for {{ $labels.instance }}"
+
+      # Transcription Quality
+      - alert: LowTranscriptionConfidence
+        expr: instance:transcription_confidence:mean5m < 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low transcription confidence detected"
+          description: "Average transcription confidence is {{ $value | humanizePercentage }} for {{ $labels.instance }}"
+
+      # Resource Usage
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_seconds_total[5m]) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value | humanizePercentage }} for {{ $labels.instance }}"
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / process_virtual_memory_max_bytes > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value | humanizePercentage }} for {{ $labels.instance }}"
+
+      # Call Volume
+      - alert: HighCallVolume
+        expr: instance:active_calls:sum > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High call volume detected"
+          description: "{{ $value }} active calls on {{ $labels.instance }}"
+
+      - alert: MaxCallCapacity
+        expr: instance:active_calls:sum >= 100
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Maximum call capacity reached"
+          description: "{{ $value }} active calls on {{ $labels.instance }} - at capacity limit"
+
+      # Service Health
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service is down"
+          description: "{{ $labels.job }} on {{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL database is unreachable"
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis cache is unreachable"
+
+      # Model Performance
+      - alert: ModelLoadingFailed
+        expr: increase(model_loading_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Model loading failed"
+          description: "Failed to load {{ $labels.model_name }} model"
+
+      - alert: SlowModelInference
+        expr: histogram_quantile(0.95, rate(model_inference_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow model inference detected"
+          description: "95th percentile inference time for {{ $labels.model_name }} is {{ $value }}s"
+
+      # Disk Space
+      - alert: LowDiskSpace
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low disk space"
+          description: "Only {{ $value | humanizePercentage }} disk space remaining on {{ $labels.instance }}"
+
+      # Connection Pool
+      - alert: DatabaseConnectionPoolExhausted
+        expr: database_connection_pool_size - database_connection_pool_available < 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Only {{ $value }} connections available in pool"
+
+      # Call Quality
+      - alert: HighCallDropRate
+        expr: rate(call_dropped_total[5m]) / rate(call_started_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High call drop rate"
+          description: "Call drop rate is {{ $value | humanizePercentage }}"
+
+      # Audio Issues
+      - alert: AudioBufferOverflow
+        expr: rate(audio_buffer_overflow_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Audio buffer overflow detected"
+          description: "Audio buffer overflow rate is {{ $value }} per second"

@@ -1,0 +1,408 @@
+# Production Configuration for Local Call Center AI
+# This configuration is optimized for high-performance, reliability, and security
+
+system:
+  environment: production
+  debug: false
+  log_level: INFO
+  timezone: UTC
+  
+  # Performance settings
+  worker_processes: auto  # Use all available CPU cores
+  worker_connections: 10000
+  keepalive_timeout: 65
+  client_max_body_size: 100m
+  
+  # Security settings
+  enable_cors: false
+  allowed_origins: []
+  enable_csrf: true
+  secure_cookies: true
+  session_timeout: 3600
+  
+server:
+  host: 0.0.0.0
+  port: 8000
+  workers: 4  # Number of Uvicorn workers
+  worker_class: uvicorn.workers.UvicornWorker
+  access_log: true
+  error_log: true
+  
+  # SSL/TLS Configuration
+  ssl:
+    enabled: true
+    cert_file: /etc/ssl/certs/server.crt
+    key_file: /etc/ssl/private/server.key
+    ca_file: /etc/ssl/certs/ca-bundle.crt
+    
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+    burst: 100
+    
+telephony:
+  provider: twilio
+  
+  # Call handling
+  max_concurrent_calls: 100
+  call_timeout_seconds: 3600  # 1 hour max call duration
+  answer_timeout_seconds: 30
+  
+  # Audio settings
+  audio_format: ulaw
+  sample_rate: 8000
+  channels: 1
+  
+  # Twilio specific
+  twilio:
+    edge: sydney  # Use nearest edge location
+    region: au1
+    voice: Polly.Amy
+    language: en-US
+    timeout: 60
+    
+models:
+  # Speech-to-Text
+  whisper:
+    model: openai/whisper-tiny
+    device: cuda  # Use 'cpu' if no GPU
+    compute_type: float16
+    language: en
+    beam_size: 5
+    best_of: 5
+    temperature: 0.0
+    compression_ratio_threshold: 2.4
+    logprob_threshold: -1.0
+    no_speech_threshold: 0.6
+    
+    # Performance optimizations
+    use_flash_attention: true
+    use_better_transformer: true
+    compile_model: true
+    
+  # Language Model
+  llm:
+    provider: ollama
+    model: llama3.2:3b
+    temperature: 0.7
+    max_tokens: 150
+    top_p: 0.9
+    top_k: 40
+    repeat_penalty: 1.1
+    
+    # Context settings
+    context_window: 4096
+    max_conversation_turns: 50
+    system_prompt_tokens: 500
+    
+    # Performance
+    num_threads: 8
+    num_gpu_layers: 32  # Adjust based on GPU memory
+    batch_size: 8
+    
+  # Text-to-Speech
+  tts:
+    model: kokoro
+    voice: af_heart
+    language: en
+    speed: 1.0
+    pitch: 1.0
+    volume: 0.9
+    
+    # Audio processing
+    denoise: true
+    remove_silence: true
+    normalize_volume: true
+    
+audio_processing:
+  # Voice Activity Detection
+  vad:
+    enabled: true
+    sensitivity: 3  # 1-5, higher is more sensitive
+    min_speech_duration_ms: 250
+    max_speech_duration_ms: 30000
+    silence_duration_ms: 1500
+    
+  # Audio preprocessing
+  preprocessing:
+    noise_reduction: true
+    echo_cancellation: true
+    automatic_gain_control: true
+    high_pass_filter: 80  # Hz
+    low_pass_filter: 3400  # Hz
+    
+  # Buffering
+  buffer:
+    size_ms: 500
+    max_size_ms: 5000
+    chunk_size_ms: 20
+    
+conversation:
+  # Context management
+  max_history_tokens: 2000
+  summarize_after_turns: 20
+  
+  # Response generation
+  response:
+    min_confidence: 0.7
+    fallback_responses:
+      - "I apologize, could you please repeat that?"
+      - "I'm sorry, I didn't quite catch that."
+      - "Could you please say that again?"
+      
+  # Conversation flow
+  interruption_handling:
+    enabled: true
+    min_speech_duration_ms: 500
+    
+database:
+  # PostgreSQL settings
+  postgres:
+    host: localhost
+    port: 5432
+    database: callcenter_prod
+    user: callcenter_user
+    password: ${POSTGRES_PASSWORD}
+    
+    # Connection pool
+    pool_size: 20
+    max_overflow: 40
+    pool_timeout: 30
+    pool_recycle: 3600
+    
+    # Performance
+    echo: false
+    connect_args:
+      connect_timeout: 10
+      application_name: call_center_ai
+      options: "-c statement_timeout=30000"
+      
+  # Redis settings
+  redis:
+    host: localhost
+    port: 6379
+    password: ${REDIS_PASSWORD}
+    db: 0
+    
+    # Connection pool
+    max_connections: 100
+    socket_timeout: 5
+    socket_connect_timeout: 5
+    
+    # Persistence
+    save_rules:
+      - seconds: 900
+        changes: 1
+      - seconds: 300
+        changes: 10
+      - seconds: 60
+        changes: 10000
+        
+caching:
+  # Model caching
+  model_cache:
+    enabled: true
+    ttl_seconds: 3600
+    max_size_mb: 1024
+    
+  # Response caching
+  response_cache:
+    enabled: true
+    ttl_seconds: 300
+    max_entries: 10000
+    
+  # Audio caching
+  audio_cache:
+    enabled: true
+    ttl_seconds: 600
+    max_size_mb: 512
+    
+monitoring:
+  # Metrics
+  metrics:
+    enabled: true
+    provider: prometheus
+    port: 9090
+    path: /metrics
+    
+    # Custom metrics
+    custom_metrics:
+      - name: call_duration_seconds
+        type: histogram
+        buckets: [0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600]
+      - name: transcription_confidence
+        type: histogram
+        buckets: [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
+      - name: response_latency_ms
+        type: histogram
+        buckets: [50, 100, 200, 500, 1000, 2000, 5000]
+        
+  # Tracing
+  tracing:
+    enabled: true
+    provider: opentelemetry
+    endpoint: http://localhost:4317
+    sample_rate: 0.1  # Sample 10% in production
+    
+  # Logging
+  logging:
+    format: json
+    level: INFO
+    max_file_size: 100MB
+    max_files: 10
+    compress: true
+    
+    # Log sampling
+    sampling:
+      enabled: true
+      rate: 0.1  # Log 10% of successful requests
+      always_log_errors: true
+      
+  # Health checks
+  health_checks:
+    enabled: true
+    interval_seconds: 30
+    timeout_seconds: 5
+    failure_threshold: 3
+    
+    checks:
+      - name: database
+        critical: true
+      - name: redis
+        critical: true
+      - name: ollama
+        critical: true
+      - name: disk_space
+        critical: true
+        min_free_gb: 10
+      - name: memory
+        critical: true
+        max_usage_percent: 90
+        
+security:
+  # Authentication
+  auth:
+    enabled: true
+    provider: jwt
+    secret_key: ${JWT_SECRET_KEY}
+    algorithm: HS256
+    token_expiry_hours: 24
+    
+  # API keys
+  api_keys:
+    enabled: true
+    header_name: X-API-Key
+    rate_limit_per_key: 1000
+    
+  # Encryption
+  encryption:
+    enabled: true
+    algorithm: AES-256-GCM
+    key_rotation_days: 90
+    
+  # Input validation
+  validation:
+    max_audio_size_mb: 10
+    allowed_audio_formats: [wav, mp3, ogg, webm]
+    max_text_length: 1000
+    sanitize_inputs: true
+    
+  # Network security
+  network:
+    allowed_ips: []  # Empty = allow all
+    enable_proxy_headers: true
+    trusted_proxies: ["127.0.0.1", "::1"]
+    
+compliance:
+  # Data retention
+  retention:
+    call_recordings_days: 90
+    transcripts_days: 365
+    logs_days: 30
+    
+  # Privacy
+  privacy:
+    mask_pii: true
+    pii_patterns:
+      - name: credit_card
+        pattern: '\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b'
+      - name: ssn
+        pattern: '\b\d{3}-\d{2}-\d{4}\b'
+      - name: email
+        pattern: '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        
+  # Audit logging
+  audit:
+    enabled: true
+    log_api_calls: true
+    log_data_access: true
+    log_configuration_changes: true
+    
+  # Consent management
+  consent:
+    recording_opt_in: true
+    analytics_opt_in: true
+    marketing_opt_in: false
+    
+backup:
+  # Database backup
+  database:
+    enabled: true
+    schedule: "0 2 * * *"  # 2 AM daily
+    retention_days: 30
+    compression: true
+    encryption: true
+    
+  # Model backup
+  models:
+    enabled: true
+    schedule: "0 0 * * 0"  # Weekly
+    retention_count: 4
+    
+  # Configuration backup
+  config:
+    enabled: true
+    schedule: "0 0 * * *"  # Daily
+    retention_days: 90
+    
+scaling:
+  # Auto-scaling
+  auto_scale:
+    enabled: true
+    min_replicas: 2
+    max_replicas: 10
+    target_cpu_percent: 70
+    target_memory_percent: 80
+    scale_up_cooldown: 300
+    scale_down_cooldown: 600
+    
+  # Load balancing
+  load_balancer:
+    algorithm: least_connections
+    health_check_path: /health
+    health_check_interval: 10
+    
+  # Circuit breaker
+  circuit_breaker:
+    enabled: true
+    failure_threshold: 5
+    success_threshold: 2
+    timeout: 30
+    half_open_max_calls: 3
+    
+# Feature flags
+features:
+  enable_call_recording: true
+  enable_real_time_transcription: true
+  enable_sentiment_analysis: false
+  enable_language_detection: true
+  enable_profanity_filter: true
+  enable_custom_vocabulary: true
+  enable_speaker_diarization: false
+  enable_emotion_detection: false
+  
+# A/B Testing
+experiments:
+  enabled: false
+  experiments: []
